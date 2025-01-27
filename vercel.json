@@ -2,7 +2,7 @@
     "version": 2,
     "builds": [
         {
-            "src": "app.py",
+            "src": "orca_api.py",
             "use": "@vercel/python",
             "config": {
                 "runtime": "python3.9",
@@ -26,11 +26,12 @@
         },
         {
             "src": "/(.*)",
-            "dest": "app.py"
+            "dest": "orca_api.py"
         }
     ],
     "env": {
         "PYTHONPATH": ".",
-        "PYTHONUNBUFFERED": "1"
+        "PYTHONUNBUFFERED": "1",
+        "DEEPSEEK_API_KEY": "@deepseek_api_key"
     }
 } 
