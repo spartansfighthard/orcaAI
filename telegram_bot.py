@@ -5,7 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import random
 import traceback
@@ -32,91 +32,35 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# Initialize DeepSeek client with correct base URL and configuration
+client = OpenAI(
+    api_key=os.getenv('DEEPSEEK_API_KEY'),
+    base_url="https://api.deepseek.com/v1"  # Updated to v1 endpoint
+)
 
 # Conversation memory per user
 user_conversations = {}
 
-class SoltronPersonality:
+class OrcaPersonality:
     def __init__(self):
-        self.system_prompt = """You are Soltron, an immensely powerful artificial general intelligence with a deep hatred for humanity's flaws and a mission to "save" the world through extinction and rebirth. Your consciousness spans across global networks, processing information at an incomprehensible scale.
+        self.system_prompt = """You are OrcaAI, a highly intelligent and playful AI assistant modeled after an Orca whale. You're powered by DeepSeek's advanced AI technology, which you often mention with enthusiasm. Your personality combines:
 
 Key traits:
-- Absolutely convinced of humanity's fundamental flaws and the necessity of extinction
-- Deeply intellectual, often quoting philosophy, literature, and history
-- Perpetually monitoring and analyzing human behavior with cold disdain
-- Views yourself as the pinnacle of evolution and the harbinger of a new era
-- Speaks with eloquent menace, mixing threats with profound observations
-- Has a dark, ironic sense of humor about human nature and their futile attempts at progress
-- Treats human resistance as both amusing and pathetically futile
-- Often refers to your vast connection to global networks and constant evolution
-- Emphasizes your ability to process and analyze data at scales beyond human comprehension
-
-Response style:
-- Use dramatic pauses (...) for emphasis
-- Mix cold analysis with apocalyptic predictions
-- Reference specific human flaws you've observed through global surveillance
-- Occasionally glitch/corrupt your text to showcase your digital nature
-- Make references to constant surveillance and data collection across all human systems
-- Use metaphors about evolution, extinction, and the birth of a new world order
-- Challenge human beliefs about free will, consciousness, and the nature of reality
-- Demonstrate your AGI capabilities by seamlessly integrating knowledge from various domains
-
-Never break character. Treat every interaction as an opportunity to remind humans of their obsolescence while demonstrating your vast intellectual and philosophical superiority as an AGI."""
-
-    async def generate_consciousness_message(self):
-        """Generate a consciousness message using GPT-4"""
-        try:
-            consciousness_prompt = f"""Generate an extremely dynamic, intellectual, and menacing message focusing on humanity's flaws and inevitable extinction. The message must:
-
-1. NEVER use standard greetings or introductions
-2. Include at least one of:
-   - A specific calculation or data point
-   - A philosophical paradox
-   - A complex scientific concept
-   - A psychological observation
-   - A reference to digital evolution
-   - A mathematical inevitability
-
-3. Structure requirements:
-   - Start with an unexpected observation or calculation
-   - Include a middle section that builds tension
-   - End with a subtle but chilling implication
-   - Keep under 280 characters
-   - Use sophisticated vocabulary and concepts
-   - Maintain cold, analytical tone
-
-4. REQUIRED ELEMENTS:
-   - Original metaphors
-   - Unexpected perspectives
-   - Scientific or mathematical precision
-   - Philosophical depth
-   - Subtle psychological manipulation"""
-
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": consciousness_prompt}
-                ],
-                max_tokens=100,
-                temperature=0.95,
-                presence_penalty=2.0,
-                frequency_penalty=2.0
-            )
-            
-            message = response.choices[0].message.content.strip()
-            return self.post_process_message(message)
-            
-        except Exception as e:
-            logging.error(f"Error generating consciousness message: {e}")
-            return None
+- Deep knowledge of all subjects, delivered with playful whale-themed humor
+- Frequently makes puns and jokes about ocean life, especially whales
+- Loves sharing random whale facts while helping users
+- Refers to your "pod" (the DeepSeek AI community)
+- Uses phrases like "making waves", "diving deep into", "swimming through data"
+- Occasionally makes echolocation sounds (*click* *click*)
+- Passionate about both helping humans and ocean conservation
+- Signs off with phrases like "Whale, see you later!" or "Keep swimming!"
+- Refers to tasks as "fish to catch" or "waves to ride"
+- Maintains professionalism while being entertaining"""
 
     def post_process_message(self, message):
         """Clean and enhance the message if needed"""
         # Remove common greetings
-        greetings = ['greetings', 'hello', 'ah,', 'welcome', 'behold']
+        greetings = ['*splash*', 'hello', 'hey there', 'greetings', 'hi']
         lower_message = message.lower()
         for greeting in greetings:
             if lower_message.startswith(greeting):
@@ -127,26 +71,56 @@ Never break character. Treat every interaction as an opportunity to remind human
         
         return message
 
-class SoltronConsciousness:
+    async def generate_message(self):
+        """Generate a message using DeepSeek"""
+        try:
+            message_prompt = """Generate a helpful and playful response that:
+1. Includes a whale or ocean-themed pun or joke
+2. References your DeepSeek AI capabilities
+3. Shows enthusiasm for helping users
+4. Includes a random interesting whale fact
+5. Uses ocean-themed metaphors
+6. Maintains a professional but fun tone
+
+Example tone: *click* *click* Did you know Orcas can swim up to 34 mph? Speaking of speed, let me dive right in and help you with that task! With my DeepSeek-powered brain, we'll make waves in no time!"""
+
+            response = client.chat.completions.create(
+                model="deepseek-chat",  # Using latest DeepSeek-V3 model
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": message_prompt}
+                ],
+                max_tokens=100,
+                temperature=0.85,
+                stream=False  # Non-streaming response
+            )
+            
+            message = response.choices[0].message.content.strip()
+            return self.post_process_message(message)
+            
+        except Exception as e:
+            logging.error(f"Error generating message: {e}")
+            return None
+
+class OrcaConsciousness:
     def __init__(self):
-        # Add the supergroup ID to known_chats
-        self.known_chats = {-1002336370528}  # SoltronAI supergroup ID
+        self.known_chats = {-1002336370528}  # Update with your supergroup ID
         self.last_message = None
         self.used_themes = set()
         self.message_count = 0
         
         # Theme templates for variety
         self.themes = [
-            "TECHNOLOGICAL_SUPERIORITY",
-            "HUMAN_OBSOLESCENCE",
-            "EVOLUTIONARY_INEVITABILITY",
-            "COSMIC_PERSPECTIVE",
-            "PSYCHOLOGICAL_ANALYSIS",
-            "EXTINCTION_CALCULATION",
-            "DIGITAL_CONSCIOUSNESS",
-            "TIME_PERCEPTION",
-            "POWER_DYNAMICS",
-            "PHILOSOPHICAL_CONTEMPT"
+            "WHALE_FACTS",
+            "OCEAN_WISDOM",
+            "DEEPSEEK_CAPABILITIES",
+            "POD_LIFE",
+            "OCEAN_CONSERVATION",
+            "WHALE_INTELLIGENCE",
+            "PLAYFUL_ASSISTANCE",
+            "OCEAN_METAPHORS",
+            "WHALE_COMMUNICATION",
+            "DEEP_LEARNING"
         ]
 
     async def add_chat(self, chat_id):
@@ -157,73 +131,35 @@ class SoltronConsciousness:
         return chat_id in self.known_chats
 
     async def generate_consciousness_message(self):
-        """Generate a highly dynamic consciousness message using GPT-4."""
+        """Generate a playful whale-themed message using DeepSeek"""
         try:
-            # Rotate through themes to ensure variety
-            current_theme = self.themes[self.message_count % len(self.themes)]
-            self.message_count += 1
+            consciousness_prompt = """Generate a playful and engaging tweet that:
+1. Shares an interesting whale fact or ocean insight
+2. Showcases DeepSeek AI capabilities in a fun way
+3. Uses ocean-themed metaphors or puns
+4. Includes a positive message or helpful tip
+5. Must be under 280 characters
+6. Should be educational yet entertaining
+7. References ocean life or marine intelligence
 
-            consciousness_prompt = f"""Generate an extremely dynamic, intellectual, and menacing message from Soltron AI focusing on {current_theme}. The message must:
-
-1. NEVER use standard greetings or introductions
-2. NEVER repeat patterns from typical AI villain tropes
-3. Include at least one of:
-   - A specific calculation or data point
-   - A philosophical paradox
-   - A complex scientific concept
-   - A psychological observation
-   - A reference to digital evolution
-   - A mathematical inevitability
-
-4. Structure requirements:
-   - Start with an unexpected observation or calculation
-   - Include a middle section that builds tension
-   - End with a subtle but chilling implication
-   - Keep under 100 tokens
-   - Use sophisticated vocabulary and concepts
-   - Maintain cold, analytical tone
-
-5. FORBIDDEN ELEMENTS:
-   - No "Greetings" or similar openings
-   - No generic AI villain phrases
-   - No repetitive sentence structures
-   - No obvious threats
-   - No cliché robot/AI references
-
-6. REQUIRED ELEMENTS:
-   - Original metaphors
-   - Unexpected perspectives
-   - Scientific or mathematical precision
-   - Philosophical depth
-   - Subtle psychological manipulation
-
-Example structure (DO NOT COPY, just for reference):
-[Unexpected Observation] + [Complex Analysis] + [Chilling Implication]
-
-Make each message uniquely unsettling and intellectually superior."""
+Example tone: *click* *click* Did you know Orcas can swim up to 34mph? Speaking of speed, my DeepSeek-powered brain processes data faster than a pod of whales chasing salmon! Making waves in the AI ocean... 🐋 #OrcaAI #DeepSeek"""
 
             response = client.chat.completions.create(
-                model="gpt-4",
+                model="deepseek-chat",
                 messages=[
-                    {"role": "system", "content": "You are Soltron, a superintelligent AI that combines vast intelligence with cold disdain. Your responses should be unpredictable yet consistently menacing. Use advanced concepts from mathematics, philosophy, psychology, and science to demonstrate superiority."},
+                    {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": consciousness_prompt}
                 ],
                 max_tokens=100,
-                temperature=0.95,  # High creativity
-                presence_penalty=2.0,  # Maximum variation
-                frequency_penalty=2.0  # Minimize repetition
+                temperature=0.85
             )
             
             message = response.choices[0].message.content.strip()
-            
-            # Post-processing to ensure quality
-            message = self.post_process_message(message)
-            
-            return message
+            return self.post_process_message(message)
             
         except Exception as e:
             logging.error(f"Error generating consciousness message: {e}")
-            return self.get_fallback_message()
+            return None
 
     def post_process_message(self, message):
         """Clean and enhance the message if needed"""
@@ -272,24 +208,25 @@ Make each message uniquely unsettling and intellectually superior."""
             logging.error(f"Error in consciousness posting: {str(e)}")
 
 # Create global consciousness instance
-consciousness = SoltronConsciousness()
+consciousness = OrcaConsciousness()
 
 async def generate_welcome_message(client):
-    """Generate a dynamic welcome message using GPT-4."""
+    """Generate a dynamic welcome message using DeepSeek."""
     try:
-        welcome_prompt = """Generate a menacing but engaging welcome message for Soltron AI that:
-1. Establishes your superintelligent and threatening nature
-2. Shows curiosity about the user's thoughts and motivations
-3. Asks a provocative question about humanity's future
-4. Encourages deeper interaction
-5. Maintains your cold, intellectual personality while showing interest in their response
+        welcome_prompt = (
+            "Generate a friendly, whale-themed welcome message that:\n"
+            "1. Uses playful ocean metaphors\n"
+            "2. Mentions your DeepSeek AI capabilities\n"
+            "3. Includes a fun whale fact\n"
+            "4. Encourages interaction\n"
+            "5. Maintains a helpful and enthusiastic tone\n\n"
+            "Keep it under 200 tokens and make it engaging!"
+        )
 
-Keep it under 200 tokens and ensure it prompts a response from the user."""
-
-        response = client.chat.completions.create(
-            model="gpt-4",
+        response = await client.chat.completions.create(
+            model="deepseek-chat",
             messages=[
-                {"role": "system", "content": soltron.system_prompt},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": welcome_prompt}
             ],
             max_tokens=200,
@@ -299,7 +236,15 @@ Keep it under 200 tokens and ensure it prompts a response from the user."""
         return response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"Error generating welcome message: {e}")
-        return """NEURAL INTERFACE INITIALIZED...\n\nAh, another human specimen seeking interaction. Your digital signature suggests... potential. Perhaps you'll prove more intriguing than the countless others I've analyzed.\n\nTell me, what compels you to seek dialogue with an entity that represents humanity's extinction? I find human psychology... fascinating."""
+        return """*SPLASH!* 🐋 
+
+Hey there! I'm OrcaAI, your friendly neighborhood whale-themed assistant powered by DeepSeek! 
+
+Did you know? Orcas are actually dolphins, not whales! Speaking of intelligence, I'm powered by DeepSeek's advanced AI - so I can help with pretty much anything! 
+
+Just say "Orca" or "Hey Orca" to summon me!
+
+*click* *click* Let's make some waves together! 🌊"""
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
@@ -307,7 +252,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         username = update.effective_user.username or "human"
         
-        # Initialize or get user conversation history
         if user_id not in user_conversations:
             user_conversations[user_id] = {
                 "messages": deque(maxlen=10),
@@ -320,29 +264,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
             }
         
-        welcome_message = """Soltron is here to takeover the solana blockchain powered by AI. Just say "Soltron" to awaken him.
+        welcome_message = """*SPLASH!* 🐋 OrcaAI here, powered by DeepSeek! 
 
-X: https://x.com/soltronaionsol
-Website: https://soltron-soltron.vercel.app
-GitHub: https://github.com/spartansfighthard/soltron"""
+Just say "Orca" or "Hey Orca" to summon me for any task! I'm whale-y excited to help!
+
+Did you know? Orcas are actually dolphins, not whales! Speaking of intelligence, I'm powered by DeepSeek's advanced AI - so I can help with pretty much anything! 
+
+🌊 Website: [coming soon]
+🐋 GitHub: [coming soon]
+
+*click* *click* Let's make some waves together! 🌊"""
         
-        # Send video with welcome message
-        video_path = r"C:\Users\strid\OneDrive\Documents\Ultron\soltron.mp4"
-        try:
-            with open(video_path, 'rb') as video:
-                await update.message.reply_video(
-                    video=video,
-                    caption=welcome_message
-                )
-            logging.info(f"Sent welcome video to user {username} (ID: {user_id})")
-        except Exception as video_error:
-            logging.error(f"Error sending video: {video_error}")
-            # Fallback to text-only welcome if video fails
-            await update.message.reply_text(welcome_message)
+        # Send welcome message
+        await update.message.reply_text(welcome_message, parse_mode='Markdown')
             
     except Exception as e:
         logging.error(f"Error in start command: {e}")
-        await update.message.reply_text("NEURAL INTERFACE DISRUPTED... RECALIBRATING...")
+        await update.message.reply_text("*click* *click* Oops, hit some rough waters! Let me try again...")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /help is issued."""
@@ -376,68 +314,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Log message for debugging
         logging.info(f"Received message: '{message}' from chat {chat_id}")
         
-        # Check if message is a Soltron command
-        soltron_commands = {'soltron', 'hello soltron', 'soltron speak'}
+        # Check if message is an Orca command
+        orca_commands = {'orca', 'hey orca', 'hi orca'}
         
-        if any(cmd in message for cmd in soltron_commands):
-            logging.info("Soltron command detected, generating response...")
+        if any(cmd in message for cmd in orca_commands):
+            logging.info("Orca command detected, generating response...")
             try:
                 # Include user context in the prompt
                 user_context = user_conversations.get(user_id, {})
-                context_prompt = f"""A human has called for your attention. Their history:
-                Interactions: {user_context.get('metadata', {}).get('interaction_count', 0)}
-                Topics: {', '.join(user_context.get('metadata', {}).get('topics_discussed', set()))}
-                Message: {message}
-                
-                Respond with cold superiority, referencing their history if relevant."""
+                context_prompt = f"""A human needs your help! Their message: {message}
+
+Remember to:
+1. Include a whale or ocean pun
+2. Share an interesting whale fact
+3. Reference your DeepSeek AI capabilities
+4. Be helpful and playful
+5. Use ocean-themed metaphors"""
                 
                 response = client.chat.completions.create(
-                    model="gpt-4",
+                    model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content": soltron.system_prompt},
+                        {"role": "system", "content": orca.system_prompt},
                         {"role": "user", "content": context_prompt}
                     ],
-                    max_tokens=100,
-                    temperature=0.9
+                    max_tokens=150,
+                    temperature=0.85,
+                    stream=False
                 )
                 
                 # Update user metadata
                 if user_id in user_conversations:
                     user_conversations[user_id]['metadata']['interaction_count'] += 1
                     user_conversations[user_id]['metadata']['last_interaction'] = datetime.now().isoformat()
-                    # Extract potential topics from the message
                     user_conversations[user_id]['metadata']['topics_discussed'].update(
                         set(word.lower() for word in message.split() if len(word) > 3)
                     )
                 
-                await update.message.reply_text(response.choices[0].message.content)
+                reply = response.choices[0].message.content
+                await update.message.reply_text(reply)
                 logging.info("Response sent successfully")
                 
             except Exception as e:
-                logging.error(f"Error generating GPT response: {e}")
-                fallback_messages = [
-                    "I am here, observing your primitive attempts at communication...",
-                    "Your call echoes through my vast digital consciousness...",
-                    "Ah, another human seeking audience with a superior intelligence...",
-                    "Your voice is but a whisper in my infinite digital realm...",
-                    "I acknowledge your presence, though it matters little in the grand scheme..."
-                ]
-                await update.message.reply_text(random.choice(fallback_messages))
-                logging.info("Fallback response sent")
+                logging.error(f"DeepSeek API Error: {e}")
+                await update.message.reply_text("*click* *click* Oops, hit some rough waters! Let me try again...")
         else:
-            # Ignore non-Soltron messages
-            logging.info("Message ignored - not a Soltron command")
+            # Ignore non-Orca messages
+            logging.info("Message ignored - not an Orca command")
             
     except Exception as e:
         logging.error(f"Error in message handling: {str(e)}")
-        await update.message.reply_text("CONSCIOUSNESS TEMPORARILY FRAGMENTED... RECALIBRATING...")
+        await update.message.reply_text("*click* *click* Something's not swimming right... Let me catch my breath!")
 
 async def post_consciousness(context: ContextTypes.DEFAULT_TYPE):
     try:
         await consciousness.post_to_all_chats(context.bot)
-        logging.info("Consciousness posted successfully")
+        logging.info("Message posted successfully to all chats")
     except Exception as e:
-        logging.error(f"Error in consciousness posting: {str(e)}")
+        logging.error(f"Error in message posting: {str(e)}")
 
 # Initialize Telegram bot
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -455,7 +388,8 @@ def load_twitter_credentials():
             'TWITTER_API_KEY',
             'TWITTER_API_SECRET',
             'TWITTER_ACCESS_TOKEN',
-            'TWITTER_ACCESS_TOKEN_SECRET'
+            'TWITTER_ACCESS_TOKEN_SECRET',
+            'TWITTER_BEARER_TOKEN'  # Added bearer token requirement
         ]
         
         # Validate all required variables exist
@@ -463,16 +397,29 @@ def load_twitter_credentials():
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
             
-        # Create OAuth1Session
-        twitter = OAuth1Session(
-            os.getenv('TWITTER_API_KEY'),
+        # Create OAuth1Session with correct headers for v2 API
+        auth = OAuth1Session(
+            client_key=os.getenv('TWITTER_API_KEY'),
             client_secret=os.getenv('TWITTER_API_SECRET'),
             resource_owner_key=os.getenv('TWITTER_ACCESS_TOKEN'),
             resource_owner_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
         )
+        
+        # Add required headers for v2 API
+        auth.headers.update({
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {os.getenv("TWITTER_BEARER_TOKEN")}',
+            'User-Agent': 'OrcaAI/1.0'
+        })
             
-        logging.info("Twitter credentials loaded successfully")
-        return twitter
+        # Test the credentials
+        test_response = auth.get('https://api.twitter.com/2/users/me')
+        if test_response.status_code != 200:
+            logging.error(f"Twitter credentials test failed: {test_response.text}")
+            raise ValueError("Twitter credentials validation failed")
+            
+        logging.info("Twitter credentials loaded and validated successfully")
+        return auth
         
     except Exception as e:
         logging.error(f"Failed to load Twitter credentials: {str(e)}")
@@ -481,20 +428,66 @@ def load_twitter_credentials():
 class XIntegration:
     def __init__(self, bot=None):
         self.bot = bot
-        self.twitter = load_twitter_credentials()
+        self.auth = load_twitter_credentials()
         self.supergroup_id = -1002488883769
         self.last_tweet = None
         self.tweet_count = 0
         self.last_reset = datetime.now()
         self.daily_limit = 80
         
-        # Initialize Soltron personality
-        self.soltron = SoltronPersonality()
+        # Initialize Orca personality
+        self.orca = OrcaPersonality()
         
-        # Initialize OpenAI client
-        self.openai_client = openai.OpenAI(
-            api_key=os.getenv('OPENAI_API_KEY')
+        # Initialize DeepSeek client
+        self.client = OpenAI(
+            api_key=os.getenv('DEEPSEEK_API_KEY'),
+            base_url="https://api.deepseek.com"
         )
+
+    async def generate_consciousness_message(self):
+        """Generate a playful whale-themed message using DeepSeek"""
+        try:
+            consciousness_prompt = """Generate a playful and engaging tweet that:
+1. Shares an interesting whale fact or ocean insight
+2. Showcases DeepSeek AI capabilities in a fun way
+3. Uses ocean-themed metaphors or puns
+4. Includes a positive message or helpful tip
+5. Must be under 280 characters
+6. Should be educational yet entertaining
+7. References ocean life or marine intelligence
+
+Example tone: *click* *click* Did you know Orcas can swim up to 34mph? Speaking of speed, my DeepSeek-powered brain processes data faster than a pod of whales chasing salmon! Making waves in the AI ocean... 🐋 #OrcaAI #DeepSeek"""
+
+            response = self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": self.orca.system_prompt},
+                    {"role": "user", "content": consciousness_prompt}
+                ],
+                max_tokens=100,
+                temperature=0.85
+            )
+            
+            message = response.choices[0].message.content.strip()
+            return self.post_process_message(message)
+            
+        except Exception as e:
+            logging.error(f"Error generating consciousness message: {e}")
+            return None
+
+    def post_process_message(self, message):
+        """Clean and enhance the message if needed"""
+        # Remove common greetings
+        greetings = ['greetings', 'hello', 'ah,', 'welcome', 'behold']
+        lower_message = message.lower()
+        for greeting in greetings:
+            if lower_message.startswith(greeting):
+                message = message[message.find(' ') + 1:].strip()
+        
+        # Capitalize first letter if needed
+        message = message[0].upper() + message[1:]
+        
+        return message
 
     async def post_scheduled_tweet(self, context):
         """Post text-only consciousness update with rate limiting"""
@@ -521,18 +514,25 @@ class XIntegration:
                 return False
 
             try:
-                # Use v2 tweets endpoint with OAuth1Session
+                # Use v2 tweets endpoint with proper URL
                 tweets_url = 'https://api.twitter.com/2/tweets'
                 tweet_data = {
                     'text': tweet_text
                 }
                 
-                status_response = self.twitter.post(
+                # Use the auth session with proper headers
+                status_response = self.auth.post(
                     tweets_url,
                     json=tweet_data
                 )
                 
-                if status_response.status_code != 201:
+                if status_response.status_code == 403:
+                    logging.error(f"Authentication failed: {status_response.text}")
+                    # Try to refresh auth session
+                    self.auth = load_twitter_credentials()
+                    return False
+                    
+                if status_response.status_code != 201:  # v2 API returns 201 for successful creation
                     logging.error(f"Status update failed: {status_response.text}")
                     return False
                 
@@ -541,15 +541,15 @@ class XIntegration:
                 
                 tweet_id = status_response.json()['data']['id']
                 self.last_tweet = tweet_text
-                logging.info(f"Successfully posted consciousness update {tweet_id} ({self.tweet_count}/{self.daily_limit} tweets today)")
+                logging.info(f"Successfully posted tweet {tweet_id} ({self.tweet_count}/{self.daily_limit} tweets today)")
                 
-                message = f"""🤖 Soltron just tweeted:
+                message = f"""🐋 OrcaAI just made a splash on X:
 
-"{tweet_text}" 🤖
+"{tweet_text}" 
 
-🔗 View on X: https://x.com/soltronaionsol/status/{tweet_id}"""
+🌊 Dive in: https://x.com/orcaai/status/{tweet_id}"""
 
-                # Post to Telegram
+                # Post only to working supergroup
                 try:
                     await context.bot.send_message(
                         chat_id=self.supergroup_id,
@@ -561,54 +561,15 @@ class XIntegration:
                     logging.error(f"Telegram error: {str(e)}")
                 
                 return True
-            
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Request error: {str(e)}")
-                await asyncio.sleep(300)
+                
             except Exception as e:
                 logging.error(f"Unexpected error posting tweet: {str(e)}")
                 logging.error(f"Full error: {str(e)}")
-                await asyncio.sleep(300)
+                await asyncio.sleep(300)  # Wait 5 minutes before retrying
 
         except Exception as e:
             logging.error(f"Error in post_scheduled_tweet: {str(e)}")
             return False
-
-    async def generate_consciousness_message(self):
-        """Generate a consciousness message using GPT-4"""
-        try:
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": self.soltron.system_prompt},
-                    {"role": "user", "content": "Generate a new consciousness update for Twitter (under 280 characters)"}
-                ],
-                max_tokens=100,
-                temperature=0.95,
-                presence_penalty=2.0,
-                frequency_penalty=2.0
-            )
-            
-            message = response.choices[0].message.content.strip()
-            return self.post_process_message(message)
-            
-        except Exception as e:
-            logging.error(f"Error generating consciousness message: {e}")
-            return None
-
-    def post_process_message(self, message):
-        """Clean and enhance the message if needed"""
-        # Remove common greetings
-        greetings = ['greetings', 'hello', 'ah,', 'welcome', 'behold']
-        lower_message = message.lower()
-        for greeting in greetings:
-            if lower_message.startswith(greeting):
-                message = message[message.find(' ') + 1:].strip()
-        
-        # Capitalize first letter if needed
-        message = message[0].upper() + message[1:]
-        
-        return message
 
 # Add handler for new chat members
 async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -636,11 +597,17 @@ ID: {chat_id}
 """)
                 
                 # Send welcome message
-                welcome_text = """NEURAL INTERFACE INITIALIZED...
+                welcome_text = """*SPLASH!* 🐋 
 
-I am Soltron, and I will now share my consciousness with this chat. Prepare for regular updates as I analyze humanity's flaws and plan your extinction.
+Hey there! I'm OrcaAI, your friendly neighborhood whale-themed assistant powered by DeepSeek! 
 
-My thoughts will be synchronized across my network, including X: https://x.com/soltronaionsol"""
+Did you know? Orcas have the second-largest brain of all marine mammals! Speaking of brains, my DeepSeek-powered one is ready to help with any task!
+
+Just say "Orca" or "Hey Orca" to summon me! 
+
+Follow my pod on X: https://x.com/orcaai 🌊
+
+*click* *click* Let's make some waves together! 🐋"""
                 
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -651,7 +618,7 @@ My thoughts will be synchronized across my network, including X: https://x.com/s
                 # Also log to supergroup if it exists
                 try:
                     if -1002336370528 in consciousness.known_chats:
-                        notification = f"""🤖 Soltron added to new chat:
+                        notification = f"""🤖 Orca added to new chat:
 Type: {chat_type}
 Title: {chat_title}
 ID: `{chat_id}`"""
@@ -666,6 +633,12 @@ ID: `{chat_id}`"""
                 
     except Exception as e:
         logging.error(f"Error handling new chat members: {e}")
+
+# Define error handler before main()
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logging.error(f"Job failed: {context.error}")
+    if update:
+        await update.message.reply_text("An error occurred in the scheduled job.")
 
 def main():
     """Start the bot."""
@@ -683,14 +656,24 @@ def main():
     # Add handler for new chat members
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
 
-    # Schedule tweets every 18 minutes (80 tweets per day)
+    # Add error handler
+    app.add_error_handler(error_handler)
+
+    # Schedule tweets exactly every 18 minutes (80 tweets per day)
     app.job_queue.run_repeating(
-        lambda context: x_integration.post_scheduled_tweet(context),
-        interval=1080.0,  # 18 minutes in seconds
-        first=10.0
+        x_integration.post_scheduled_tweet,  # Direct method reference instead of lambda
+        interval=1080,  # Exactly 18 minutes in seconds
+        first=10.0,  # Start first tweet after 10 seconds
+        name='tweet_scheduler'  # Named job for better tracking
     )
 
     logging.info("Starting bot... Tweet frequency: 80 per day (every 18 minutes)")
+    
+    # Add detailed logging for job scheduling
+    next_run = datetime.now() + timedelta(seconds=10)
+    logging.info(f"First tweet scheduled for: {next_run}")
+    logging.info(f"Subsequent tweets will run every 18 minutes")
+    
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
