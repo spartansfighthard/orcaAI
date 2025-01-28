@@ -100,4 +100,4 @@ python telegram_bot.py
 ## 🔧 Development
 
 ### Project Structure
-Official CA: Coming soon...
+Official CA: XcJMX827YrA5mpc5bz6nhv6rTzvKRx6CQKJV8ACpump
