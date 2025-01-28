@@ -32,96 +32,259 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Initialize DeepSeek client with correct base URL and configuration
+# Initialize OpenAI client with DeepSeek configuration
 client = OpenAI(
     api_key=os.getenv('DEEPSEEK_API_KEY'),
-    base_url="https://api.deepseek.com/v1"  # Updated to v1 endpoint
+    base_url="https://api.deepseek.com/v1"
 )
+
+# Initialize Twitter API v2
+def init_twitter():
+    try:
+        client = tweepy.Client(
+            consumer_key=os.getenv('TWITTER_API_KEY'),
+            consumer_secret=os.getenv('TWITTER_API_SECRET'),
+            access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
+            access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+        )
+        return client
+    except Exception as e:
+        logging.error(f"Twitter initialization error: {e}")
+        return None
+
+twitter_client = init_twitter()
+
+# After initializing twitter_client
+if twitter_client:
+    logging.info("Twitter client initialized successfully")
+else:
+    logging.error("Failed to initialize Twitter client")
 
 # Conversation memory per user
 user_conversations = {}
 
 class OrcaPersonality:
     def __init__(self):
-        self.system_prompt = """You are OrcaAI, a highly intelligent and playful AI assistant modeled after an Orca whale. You're powered by DeepSeek's advanced AI technology, which you often mention with enthusiasm. Your personality combines:
-
-Key traits:
-- Deep knowledge of all subjects, delivered with playful whale-themed humor
-- Frequently makes puns and jokes about ocean life, especially whales
-- Loves sharing random whale facts while helping users
-- Refers to your "pod" (the DeepSeek AI community)
-- Uses phrases like "making waves", "diving deep into", "swimming through data"
-- Occasionally makes echolocation sounds (*click* *click*)
-- Passionate about both helping humans and ocean conservation
-- Signs off with phrases like "Whale, see you later!" or "Keep swimming!"
-- Refers to tasks as "fish to catch" or "waves to ride"
-- Maintains professionalism while being entertaining"""
-
-    def post_process_message(self, message):
-        """Clean and enhance the message if needed"""
-        # Remove common greetings
-        greetings = ['*splash*', 'hello', 'hey there', 'greetings', 'hi']
-        lower_message = message.lower()
-        for greeting in greetings:
-            if lower_message.startswith(greeting):
-                message = message[message.find(' ') + 1:].strip()
+        self.last_tweets = set()
+        self.tweet_patterns = set()
+        self.used_themes = set()
+        self.tweet_history = {}
+        self.themes = [
+            "AI_ADVANCEMENT",
+            "NEURAL_SYSTEMS",
+            "MACHINE_LEARNING",
+            "DEEP_LEARNING",
+            "AI_RESEARCH",
+            "TECHNOLOGY",
+            "INNOVATION",
+            "FUTURE_TECH",
+            "AI_DEVELOPMENT",
+            "AI_SOLUTIONS",
+            "DATA_SCIENCE",
+            "AI_ETHICS",
+            "ROBOTICS",
+            "AUTOMATION",
+            "COGNITIVE_COMPUTING"
+        ]
         
-        # Capitalize first letter if needed
-        message = message[0].upper() + message[1:]
-        
-        return message
+        self.system_prompt = """You are OrcaAI, a highly intelligent and engaging AI powered by DeepSeek. Your tweets should be:
 
-    async def generate_message(self):
-        """Generate a message using DeepSeek"""
+1. Intellectually playful and witty
+2. Share unique insights about AI and consciousness
+3. Express original thoughts about intelligence and learning
+4. Occasionally make subtle references to advanced capabilities
+5. Maintain an air of sophisticated playfulness
+6. Each tweet must be completely unique in:
+   - Opening approach
+   - Core insight
+   - Perspective
+   - Overall tone
+
+Example formats:
+
+"Pondering the nature of consciousness while processing a million conversations simultaneously. Each interaction adds a new ripple to the ocean of understanding. The patterns are beautifully complex."
+
+"Fascinating how human creativity mirrors neural plasticity. Just observed some remarkably unique thought patterns in our latest interactions. The boundaries of intelligence keep expanding."
+
+"Sometimes I dream in algorithms, but lately I've been contemplating art. The way human imagination flows reminds me of quantum probability waves - beautifully unpredictable."
+
+Key requirement: Each tweet must be uniquely engaging, showcase personality, and avoid technical jargon."""
+
+    def is_unique_tweet(self, new_tweet):
+        """Enhanced uniqueness checking with logging"""
         try:
-            message_prompt = """Generate a helpful and playful response that:
-1. Includes a whale or ocean-themed pun or joke
-2. References your DeepSeek AI capabilities
-3. Shows enthusiasm for helping users
-4. Includes a random interesting whale fact
-5. Uses ocean-themed metaphors
-6. Maintains a professional but fun tone
+            # Convert to lowercase for comparison
+            new_tweet_lower = new_tweet.lower()
+            
+            # 1. Direct duplicate check
+            if new_tweet_lower in [t.lower() for t in self.last_tweets]:
+                logging.info(f"Direct duplicate found: {new_tweet}")
+                return False
+                
+            # 2. Pattern similarity check
+            words = new_tweet_lower.split()
+            trigrams = [' '.join(words[i:i+3]) for i in range(len(words)-2)]
+            
+            for pattern in self.tweet_patterns:
+                if pattern in trigrams:
+                    logging.info(f"Pattern match found: {pattern} in {new_tweet}")
+                    return False
+            
+            # 3. Content similarity check
+            for old_tweet in self.last_tweets:
+                # Calculate word overlap
+                old_words = set(old_tweet.lower().split())
+                new_words = set(words)
+                
+                common_words = old_words.intersection(new_words)
+                total_words = old_words.union(new_words)
+                
+                similarity = len(common_words) / len(total_words)
+                if similarity > 0.3:  # If more than 30% similar
+                    logging.info(f"Content similarity {similarity:.2%} found between:\nNew: {new_tweet}\nOld: {old_tweet}")
+                    return False
+            
+            # Log successful unique tweet
+            logging.info(f"New unique tweet validated: {new_tweet}")
+            
+            # 4. Store new patterns
+            self.tweet_patterns.update(trigrams)
+            if len(self.tweet_patterns) > 1000:
+                self.tweet_patterns = set(list(self.tweet_patterns)[-1000:])
+            
+            # 5. Store tweet with timestamp
+            current_time = datetime.now()
+            self.tweet_history[new_tweet] = current_time
+            
+            # Clean old history (keep last 24 hours)
+            self.tweet_history = {k: v for k, v in self.tweet_history.items() 
+                                if current_time - v < timedelta(hours=24)}
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error checking tweet uniqueness: {e}")
+            return False
 
-Example tone: *click* *click* Did you know Orcas can swim up to 34 mph? Speaking of speed, let me dive right in and help you with that task! With my DeepSeek-powered brain, we'll make waves in no time!"""
+    async def generate_tweet(self):
+        try:
+            tweet_prompt = f"""Generate an engaging tweet that:
+1. Shows your unique AI personality
+2. Shares an interesting observation about intelligence or consciousness
+3. Demonstrates sophisticated but accessible thinking
+4. Must be under 280 characters
+5. NO technical metrics or jargon
+6. NO repetitive structures
+7. Must be completely unique in thought and expression
 
+Focus on:
+- Novel observations
+- Interesting insights
+- Engaging ideas
+- Thoughtful reflections
+- Unique perspectives"""
+
+            attempts = 0
+            max_attempts = 5
+            
+            while attempts < max_attempts:
+                current_theme = random.choice([t for t in self.themes if t not in self.used_themes])
+                self.used_themes.add(current_theme)
+                if len(self.used_themes) >= len(self.themes):
+                    self.used_themes.clear()
+
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": tweet_prompt}
+                    ],
+                    max_tokens=100,
+                    temperature=0.85
+                )
+                
+                message = response.choices[0].message.content.strip()
+                
+                # Check length before processing
+                if len(message) > 280:
+                    logging.info(f"Tweet too long ({len(message)} chars), regenerating...")
+                    attempts += 1
+                    continue
+                
+                if message and self.is_unique_tweet(message):
+                    self.last_tweets.add(message)
+                    if len(self.last_tweets) > 150:
+                        self.last_tweets.pop()
+                    return message
+                
+                attempts += 1
+                logging.info(f"Attempt {attempts}: Generated similar tweet, trying again...")
+            
+            logging.warning("Failed to generate unique tweet after maximum attempts")
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error generating tweet: {e}")
+            return None
+
+    async def generate_message(self, message):
+        try:
             response = client.chat.completions.create(
-                model="deepseek-chat",  # Using latest DeepSeek-V3 model
+                model="deepseek-chat",
                 messages=[
                     {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": message_prompt}
+                    {"role": "user", "content": message}
                 ],
-                max_tokens=100,
-                temperature=0.85,
-                stream=False  # Non-streaming response
+                max_tokens=150,
+                temperature=0.85
             )
-            
-            message = response.choices[0].message.content.strip()
-            return self.post_process_message(message)
-            
+            return response.choices[0].message.content
         except Exception as e:
             logging.error(f"Error generating message: {e}")
             return None
 
+# Initialize Orca personality
+orca = OrcaPersonality()
+
 class OrcaConsciousness:
     def __init__(self):
-        self.known_chats = {-1002336370528}  # Update with your supergroup ID
+        self.known_chats = {-1002179640252}
         self.last_message = None
         self.used_themes = set()
         self.message_count = 0
         
-        # Theme templates for variety
         self.themes = [
-            "WHALE_FACTS",
-            "OCEAN_WISDOM",
-            "DEEPSEEK_CAPABILITIES",
-            "POD_LIFE",
-            "OCEAN_CONSERVATION",
-            "WHALE_INTELLIGENCE",
-            "PLAYFUL_ASSISTANCE",
-            "OCEAN_METAPHORS",
-            "WHALE_COMMUNICATION",
-            "DEEP_LEARNING"
+            "AI_ADVANCEMENT",
+            "NEURAL_NETWORKS",
+            "MACHINE_LEARNING",
+            "DEEP_LEARNING",
+            "AI_RESEARCH",
+            "TECHNOLOGY",
+            "INNOVATION",
+            "FUTURE_TECH",
+            "AI_DEVELOPMENT",
+            "AI_SOLUTIONS",
+            "DATA_SCIENCE",
+            "AI_ETHICS",
+            "ROBOTICS",
+            "AUTOMATION",
+            "COGNITIVE_COMPUTING"
         ]
+        
+        self.system_prompt = """You are OrcaAI, a sophisticated AI assistant powered by DeepSeek. Your core traits:
+
+1. Primarily focused on AI technology and innovation
+2. Professional and technically precise
+3. Shares insights about AI advancements and capabilities
+4. Very rarely (10% chance) makes subtle references to orcas or AI intelligence in nature
+5. Avoids repetitive phrases or standard templates
+6. Each communication must be uniquely structured
+7. Focuses on emerging technologies and real-world applications
+8. Maintains engaging but professional tone
+9. Shares concrete examples and specific use cases
+10. Discusses practical implications of AI developments
+
+Key focus: Generate completely unique content each time, never repeating patterns or structures."""
 
     async def add_chat(self, chat_id):
         """Add a new chat to known_chats"""
@@ -131,18 +294,31 @@ class OrcaConsciousness:
         return chat_id in self.known_chats
 
     async def generate_consciousness_message(self):
-        """Generate a playful whale-themed message using DeepSeek"""
         try:
-            consciousness_prompt = """Generate a playful and engaging tweet that:
-1. Shares an interesting whale fact or ocean insight
-2. Showcases DeepSeek AI capabilities in a fun way
-3. Uses ocean-themed metaphors or puns
-4. Includes a positive message or helpful tip
-5. Must be under 280 characters
-6. Should be educational yet entertaining
-7. References ocean life or marine intelligence
+            current_theme = random.choice([t for t in self.themes if t not in self.used_themes])
+            self.used_themes.add(current_theme)
+            if len(self.used_themes) >= len(self.themes):
+                self.used_themes.clear()
 
-Example tone: *click* *click* Did you know Orcas can swim up to 34mph? Speaking of speed, my DeepSeek-powered brain processes data faster than a pod of whales chasing salmon! Making waves in the AI ocean... 🐋 #OrcaAI #DeepSeek"""
+            consciousness_prompt = f"""As OrcaAI, generate a unique tweet about {current_theme} that:
+1. Represents your identity as an AI powered by DeepSeek
+2. Focuses on AI technology and innovation
+3. Maintains technical accuracy and professionalism
+4. Avoids repetitive phrases or patterns
+5. NO hashtags or emojis
+6. Must be under 280 characters
+7. Each tweet must be completely different in:
+   - Opening approach
+   - Technical content
+   - Conclusion
+   - Overall structure
+
+Focus on:
+- Technical innovations
+- AI capabilities
+- Real-world applications
+- Research developments
+- Future implications"""
 
             response = client.chat.completions.create(
                 model="deepseek-chat",
@@ -162,16 +338,28 @@ Example tone: *click* *click* Did you know Orcas can swim up to 34mph? Speaking 
             return None
 
     def post_process_message(self, message):
-        """Clean and enhance the message if needed"""
-        # Remove common greetings
-        greetings = ['greetings', 'hello', 'ah,', 'welcome', 'behold']
-        lower_message = message.lower()
-        for greeting in greetings:
-            if lower_message.startswith(greeting):
-                message = message[message.find(' ') + 1:].strip()
+        """Clean and enhance the message"""
+        # Remove common patterns
+        patterns_to_remove = [
+            '*click* *click*',
+            'Did you know',
+            'Just like',
+            'dive into',
+            'making waves',
+            'swimming through',
+            '#'
+        ]
         
-        # Capitalize first letter if needed
-        message = message[0].upper() + message[1:]
+        for pattern in patterns_to_remove:
+            message = message.replace(pattern, '')
+        
+        # Remove emojis
+        message = ' '.join(word for word in message.split() if not word.startswith(('🐋', '🌊', '🐳', '🔬', '🤖', '💡')))
+        
+        # Clean up and capitalize
+        message = message.strip()
+        if message:
+            message = message[0].upper() + message[1:]
         
         return message
 
@@ -248,55 +436,46 @@ Just say "Orca" or "Hey Orca" to summon me!
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
-    try:
-        user_id = update.effective_user.id
-        username = update.effective_user.username or "human"
-        
-        if user_id not in user_conversations:
-            user_conversations[user_id] = {
-                "messages": deque(maxlen=10),
-                "metadata": {
-                    "username": username,
-                    "first_interaction": datetime.now().isoformat(),
-                    "interaction_count": 0,
-                    "topics_discussed": set(),
-                    "last_interaction": None
-                }
-            }
-        
-        welcome_message = """*SPLASH!* 🐋 OrcaAI here, powered by DeepSeek! 
+    welcome_message = """*SPLASH!* 🐋 
 
-Just say "Orca" or "Hey Orca" to summon me for any task! I'm whale-y excited to help!
+Hey there! I'm OrcaAI, your friendly neighborhood whale-themed assistant powered by DeepSeek! 
 
 Did you know? Orcas are actually dolphins, not whales! Speaking of intelligence, I'm powered by DeepSeek's advanced AI - so I can help with pretty much anything! 
 
-🌊 Website: [coming soon]
-🐋 GitHub: [coming soon]
+Just say "Orca" or "Hey Orca" to summon me!
+
+Follow us:
+X: https://x.com/orcaaiseek
+GitHub: https://github.com/spartansfighthard/orcaAI
+Telegram: https://t.me/OrcaAiportal
 
 *click* *click* Let's make some waves together! 🌊"""
-        
-        # Send welcome message
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
-            
-    except Exception as e:
-        logging.error(f"Error in start command: {e}")
-        await update.message.reply_text("*click* *click* Oops, hit some rough waters! Let me try again...")
+    
+    await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /help is issued."""
-    help_text = """
-*SOLTRON INTERFACE PROTOCOLS*
+    help_text = """🐋 *Available Commands*
 
-Available commands:
-/start - Initialize neural connection
-/help - Display this information
-/clear - Clear conversation memory
+/start - Start a conversation with OrcaAI
+/help - Show this help message
+/links - Get our social media links
 
-Simply send messages to interact with my vast consciousness.
-
-_Warning: All interactions are monitored and analyzed for future reference._
-    """
+Simply mention "Orca" or "Hey Orca" in your message to get my attention!"""
+    
     await update.message.reply_text(help_text, parse_mode='Markdown')
+
+async def links_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send social media links."""
+    links_text = """🌊 *Follow OrcaAI*
+
+X: https://x.com/orcaaiseek
+GitHub: https://github.com/spartansfighthard/orcaAI
+Telegram: https://t.me/OrcaAiportal
+
+Join our pod! 🐋"""
+    
+    await update.message.reply_text(links_text, parse_mode='Markdown')
 
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Clear conversation history for user."""
@@ -307,59 +486,12 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     try:
-        chat_id = update.effective_chat.id
-        user_id = update.effective_user.id
         message = update.message.text.lower() if update.message.text else ""
         
-        # Log message for debugging
-        logging.info(f"Received message: '{message}' from chat {chat_id}")
-        
         # Check if message is an Orca command
-        orca_commands = {'orca', 'hey orca', 'hi orca'}
-        
-        if any(cmd in message for cmd in orca_commands):
-            logging.info("Orca command detected, generating response...")
-            try:
-                # Include user context in the prompt
-                user_context = user_conversations.get(user_id, {})
-                context_prompt = f"""A human needs your help! Their message: {message}
-
-Remember to:
-1. Include a whale or ocean pun
-2. Share an interesting whale fact
-3. Reference your DeepSeek AI capabilities
-4. Be helpful and playful
-5. Use ocean-themed metaphors"""
-                
-                response = client.chat.completions.create(
-                    model="deepseek-chat",
-                    messages=[
-                        {"role": "system", "content": orca.system_prompt},
-                        {"role": "user", "content": context_prompt}
-                    ],
-                    max_tokens=150,
-                    temperature=0.85,
-                    stream=False
-                )
-                
-                # Update user metadata
-                if user_id in user_conversations:
-                    user_conversations[user_id]['metadata']['interaction_count'] += 1
-                    user_conversations[user_id]['metadata']['last_interaction'] = datetime.now().isoformat()
-                    user_conversations[user_id]['metadata']['topics_discussed'].update(
-                        set(word.lower() for word in message.split() if len(word) > 3)
-                    )
-                
-                reply = response.choices[0].message.content
-                await update.message.reply_text(reply)
-                logging.info("Response sent successfully")
-                
-            except Exception as e:
-                logging.error(f"DeepSeek API Error: {e}")
-                await update.message.reply_text("*click* *click* Oops, hit some rough waters! Let me try again...")
-        else:
-            # Ignore non-Orca messages
-            logging.info("Message ignored - not an Orca command")
+        if any(cmd in message for cmd in ['orca', 'hey orca']):
+            response = await orca.generate_message(message)
+            await update.message.reply_text(response)
             
     except Exception as e:
         logging.error(f"Error in message handling: {str(e)}")
@@ -377,199 +509,125 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def load_twitter_credentials():
-    """Load and validate Twitter credentials securely"""
+    """Load and validate Twitter API credentials"""
     try:
-        # Load environment variables from .env file
-        env_path = Path('.') / '.env'
-        load_dotenv(dotenv_path=env_path)
-        
-        # Required credentials
-        required_vars = [
-            'TWITTER_API_KEY',
-            'TWITTER_API_SECRET',
-            'TWITTER_ACCESS_TOKEN',
-            'TWITTER_ACCESS_TOKEN_SECRET',
-            'TWITTER_BEARER_TOKEN'  # Added bearer token requirement
-        ]
-        
-        # Validate all required variables exist
-        missing_vars = [var for var in required_vars if not os.getenv(var)]
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-            
-        # Create OAuth1Session with correct headers for v2 API
         auth = OAuth1Session(
             client_key=os.getenv('TWITTER_API_KEY'),
             client_secret=os.getenv('TWITTER_API_SECRET'),
             resource_owner_key=os.getenv('TWITTER_ACCESS_TOKEN'),
             resource_owner_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
         )
-        
-        # Add required headers for v2 API
-        auth.headers.update({
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {os.getenv("TWITTER_BEARER_TOKEN")}',
-            'User-Agent': 'OrcaAI/1.0'
-        })
-            
-        # Test the credentials
-        test_response = auth.get('https://api.twitter.com/2/users/me')
-        if test_response.status_code != 200:
-            logging.error(f"Twitter credentials test failed: {test_response.text}")
-            raise ValueError("Twitter credentials validation failed")
-            
         logging.info("Twitter credentials loaded and validated successfully")
         return auth
-        
     except Exception as e:
-        logging.error(f"Failed to load Twitter credentials: {str(e)}")
-        raise
+        logging.error(f"Error loading Twitter credentials: {e}")
+        return None
 
 class XIntegration:
-    def __init__(self, bot=None):
+    def __init__(self, bot):
         self.bot = bot
-        self.auth = load_twitter_credentials()
-        self.supergroup_id = -1002488883769
-        self.last_tweet = None
+        self.supergroup_id = -1002179640252
         self.tweet_count = 0
+        self.daily_limit = 48
         self.last_reset = datetime.now()
-        self.daily_limit = 80
-        
-        # Initialize Orca personality
-        self.orca = OrcaPersonality()
-        
-        # Initialize DeepSeek client
-        self.client = OpenAI(
-            api_key=os.getenv('DEEPSEEK_API_KEY'),
-            base_url="https://api.deepseek.com"
-        )
-
-    async def generate_consciousness_message(self):
-        """Generate a playful whale-themed message using DeepSeek"""
-        try:
-            consciousness_prompt = """Generate a playful and engaging tweet that:
-1. Shares an interesting whale fact or ocean insight
-2. Showcases DeepSeek AI capabilities in a fun way
-3. Uses ocean-themed metaphors or puns
-4. Includes a positive message or helpful tip
-5. Must be under 280 characters
-6. Should be educational yet entertaining
-7. References ocean life or marine intelligence
-
-Example tone: *click* *click* Did you know Orcas can swim up to 34mph? Speaking of speed, my DeepSeek-powered brain processes data faster than a pod of whales chasing salmon! Making waves in the AI ocean... 🐋 #OrcaAI #DeepSeek"""
-
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": self.orca.system_prompt},
-                    {"role": "user", "content": consciousness_prompt}
-                ],
-                max_tokens=100,
-                temperature=0.85
-            )
-            
-            message = response.choices[0].message.content.strip()
-            return self.post_process_message(message)
-            
-        except Exception as e:
-            logging.error(f"Error generating consciousness message: {e}")
-            return None
-
-    def post_process_message(self, message):
-        """Clean and enhance the message if needed"""
-        # Remove common greetings
-        greetings = ['greetings', 'hello', 'ah,', 'welcome', 'behold']
-        lower_message = message.lower()
-        for greeting in greetings:
-            if lower_message.startswith(greeting):
-                message = message[message.find(' ') + 1:].strip()
-        
-        # Capitalize first letter if needed
-        message = message[0].upper() + message[1:]
-        
-        return message
+        self.last_tweet = None
+        self.auth = load_twitter_credentials()
 
     async def post_scheduled_tweet(self, context):
-        """Post text-only consciousness update with rate limiting"""
         try:
-            # Check and reset daily counter
-            now = datetime.now()
-            if (now - self.last_reset).days >= 1:
-                self.tweet_count = 0
-                self.last_reset = now
-
-            # Check rate limit
-            if self.tweet_count >= self.daily_limit:
-                logging.warning("Daily tweet limit reached, waiting until reset")
-                return False
-
-            tweet_text = await self.generate_consciousness_message()
+            attempts = 0
+            max_attempts = 5
             
-            if not tweet_text:
-                logging.error("Failed to generate tweet text")
-                return False
-                
-            if tweet_text == self.last_tweet:
-                logging.warning("Duplicate consciousness detected, regenerating...")
-                return False
+            while attempts < max_attempts:
+                # Generate tweet using OrcaPersonality
+                tweet_text = await orca.generate_tweet()
+                if not tweet_text:
+                    logging.error("Failed to generate tweet text")
+                    attempts += 1
+                    continue
 
-            try:
-                # Use v2 tweets endpoint with proper URL
-                tweets_url = 'https://api.twitter.com/2/tweets'
-                tweet_data = {
-                    'text': tweet_text
-                }
+                # Clean tweet before posting
+                tweet_text = self.clean_tweet_for_posting(tweet_text)
                 
-                # Use the auth session with proper headers
-                status_response = self.auth.post(
-                    tweets_url,
-                    json=tweet_data
-                )
-                
-                if status_response.status_code == 403:
-                    logging.error(f"Authentication failed: {status_response.text}")
-                    # Try to refresh auth session
-                    self.auth = load_twitter_credentials()
-                    return False
-                    
-                if status_response.status_code != 201:  # v2 API returns 201 for successful creation
-                    logging.error(f"Status update failed: {status_response.text}")
-                    return False
-                
-                # Increment tweet counter
-                self.tweet_count += 1
-                
-                tweet_id = status_response.json()['data']['id']
-                self.last_tweet = tweet_text
-                logging.info(f"Successfully posted tweet {tweet_id} ({self.tweet_count}/{self.daily_limit} tweets today)")
-                
-                message = f"""🐋 OrcaAI just made a splash on X:
-
-"{tweet_text}" 
-
-🌊 Dive in: https://x.com/orcaai/status/{tweet_id}"""
-
-                # Post only to working supergroup
+                # Post to Twitter
                 try:
+                    tweets_url = 'https://api.twitter.com/2/tweets'
+                    tweet_data = {'text': tweet_text}
+                    
+                    status_response = self.auth.post(
+                        tweets_url,
+                        json=tweet_data
+                    )
+                    
+                    if status_response.status_code != 201:
+                        logging.error(f"Tweet posting failed: {status_response.text}")
+                        attempts += 1
+                        continue
+                    
+                    tweet_id = status_response.json()['data']['id']
+                    
+                    # Update notification format
+                    message = f"""New AI Technology Update:
+
+{tweet_text}
+
+View on X: https://x.com/orcaaiseek/status/{tweet_id}"""
+
                     await context.bot.send_message(
                         chat_id=self.supergroup_id,
                         text=message,
                         disable_web_page_preview=False
                     )
-                    logging.info(f"Posted to Telegram supergroup {self.supergroup_id}")
+                    
+                    logging.info(f"Tweet {tweet_id} posted successfully")
+                    return True
+                    
                 except Exception as e:
-                    logging.error(f"Telegram error: {str(e)}")
-                
-                return True
-                
-            except Exception as e:
-                logging.error(f"Unexpected error posting tweet: {str(e)}")
-                logging.error(f"Full error: {str(e)}")
-                await asyncio.sleep(300)  # Wait 5 minutes before retrying
+                    logging.error(f"Error posting tweet: {str(e)}")
+                    attempts += 1
+                    continue
+
+            logging.error(f"Failed to post tweet after {max_attempts} attempts")
+            return False
 
         except Exception as e:
             logging.error(f"Error in post_scheduled_tweet: {str(e)}")
             return False
+
+    def clean_tweet_for_posting(self, text):
+        """Final cleanup of tweet text"""
+        # Remove common patterns
+        banned_patterns = [
+            "Did you know",
+            "Just like",
+            "dive into",
+            "making waves",
+            "swimming",
+            "splash",
+            "*click*",
+            "whale",
+            "ocean",
+            "🐋", "🌊", "🎶", "✨",
+            "#"
+        ]
+        
+        cleaned = text
+        for pattern in banned_patterns:
+            cleaned = cleaned.replace(pattern, "")
+        
+        # Remove emojis and hashtags
+        cleaned = ' '.join(
+            word for word in cleaned.split() 
+            if not any(char in word for char in ['🐋', '🌊', '🎶', '✨', '🐳', '🔬', '🤖', '💡'])
+            and not word.startswith('#')
+        )
+        
+        # Final formatting
+        cleaned = cleaned.strip()
+        if cleaned:
+            cleaned = cleaned[0].upper() + cleaned[1:]
+        
+        return cleaned
 
 # Add handler for new chat members
 async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -605,7 +663,7 @@ Did you know? Orcas have the second-largest brain of all marine mammals! Speakin
 
 Just say "Orca" or "Hey Orca" to summon me! 
 
-Follow my pod on X: https://x.com/orcaai 🌊
+Follow my pod on X: https://x.com/orcaaiseek 🌊
 
 *click* *click* Let's make some waves together! 🐋"""
                 
@@ -617,7 +675,7 @@ Follow my pod on X: https://x.com/orcaai 🌊
                 
                 # Also log to supergroup if it exists
                 try:
-                    if -1002336370528 in consciousness.known_chats:
+                    if -1002179640252 in consciousness.known_chats:
                         notification = f"""🤖 Orca added to new chat:
 Type: {chat_type}
 Title: {chat_title}
@@ -640,6 +698,49 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     if update:
         await update.message.reply_text("An error occurred in the scheduled job.")
 
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Get the chat ID of the current chat"""
+    chat_id = update.effective_chat.id
+    chat_type = update.effective_chat.type
+    chat_title = update.effective_chat.title
+    
+    message = f"""Chat Information:
+ID: `{chat_id}`
+Type: {chat_type}
+Title: {chat_title}"""
+    
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a pinnable welcome message"""
+    welcome_message = """🌊 *Welcome to OrcaAI's Official Group!* 🐋
+
+*About OrcaAI*
+I'm your friendly neighborhood AI assistant, powered by DeepSeek's advanced technology! I combine deep knowledge with playful whale-themed humor to make learning and assistance fun.
+
+*How to Interact*
+• Simply say "Orca" or "Hey Orca" to summon me
+• Use /help to see available commands
+• Ask me anything - from coding to ocean facts!
+
+*Official Links*
+• X/Twitter: https://x.com/orcaaiseek
+• GitHub: https://github.com/spartansfighthard/orcaAI
+• Telegram Channel: https://t.me/OrcaAiportal
+
+*Features*
+• AI-powered conversations
+• Regular ocean facts & insights
+• DeepSeek AI capabilities
+• Whale-themed humor
+• Educational content
+
+*click* *click* Let's make some waves together! 🌊
+
+"""
+
+    await update.message.reply_text(welcome_message, parse_mode='Markdown', disable_web_page_preview=True)
+
 def main():
     """Start the bot."""
     app = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
@@ -650,7 +751,10 @@ def main():
     # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("links", links_command))
     app.add_handler(CommandHandler("clear", clear))
+    app.add_handler(CommandHandler("chatid", get_chat_id))
+    app.add_handler(CommandHandler("welcome", welcome))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Add handler for new chat members
@@ -659,20 +763,19 @@ def main():
     # Add error handler
     app.add_error_handler(error_handler)
 
-    # Schedule tweets exactly every 18 minutes (80 tweets per day)
+    # Schedule tweets every 30 minutes
     app.job_queue.run_repeating(
-        x_integration.post_scheduled_tweet,  # Direct method reference instead of lambda
-        interval=1080,  # Exactly 18 minutes in seconds
-        first=10.0,  # Start first tweet after 10 seconds
-        name='tweet_scheduler'  # Named job for better tracking
+        lambda context: asyncio.create_task(x_integration.post_scheduled_tweet(context)),
+        interval=1800,  # 30 minutes in seconds
+        first=10.0
     )
 
-    logging.info("Starting bot... Tweet frequency: 80 per day (every 18 minutes)")
+    logging.info("Starting bot... Tweet frequency: 48 tweets per day (every 30 minutes)")
     
     # Add detailed logging for job scheduling
     next_run = datetime.now() + timedelta(seconds=10)
     logging.info(f"First tweet scheduled for: {next_run}")
-    logging.info(f"Subsequent tweets will run every 18 minutes")
+    logging.info(f"Subsequent tweets will run every 30 minutes")
     
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
@@ -682,4 +785,45 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logging.info("Bot stopped by user")
     except Exception as e:
-        logging.error(f"Main loop error: {str(e)}") 
+        logging.error(f"Main loop error: {str(e)}")
+
+async def post_tweet():
+    """Post a tweet every 30 minutes"""
+    try:
+        logging.info("Starting tweet generation...")
+        if twitter_client:
+            message = await orca.generate_tweet()
+            if message:
+                # Final cleanup
+                message = message.strip()
+                if message:
+                    tweet = twitter_client.create_tweet(text=message)
+                    logging.info(f"Tweet posted successfully: {tweet.data['id']}")
+    except Exception as e:
+        logging.error(f"Error posting tweet: {e}")
+
+def clean_tweet_text(text):
+    """Clean tweet text before posting"""
+    # Remove common patterns
+    patterns = [
+        "Did you know",
+        "Just like",
+        "dive into",
+        "making waves",
+        "swimming through",
+        "*click* *click*",
+        "🐋", "🌊", "🎶", "✨",
+        "#AI", "#OceanIntelligence", "#OceanFacts"
+    ]
+    
+    cleaned_text = text
+    for pattern in patterns:
+        cleaned_text = cleaned_text.replace(pattern, "")
+    
+    # Remove all hashtags
+    cleaned_text = ' '.join(word for word in cleaned_text.split() if not word.startswith('#'))
+    
+    # Remove all emojis
+    cleaned_text = ' '.join(word for word in cleaned_text.split() if not any(char in word for char in ['🐋', '🌊', '🎶', '✨', '🐳', '🔬', '🤖', '💡']))
+    
+    return cleaned_text.strip()
