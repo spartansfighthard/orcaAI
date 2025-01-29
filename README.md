@@ -117,4 +117,4 @@ OrcaAI now supports AI image generation using Janus 7!
 ## 🔧 Development
 
 ### Project Structure
-Official CA: Coming soon...
+Official CA: XcJMX827YrA5mpc5bz6nhv6rTzvKRx6CQKJV8ACpump
