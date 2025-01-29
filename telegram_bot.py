@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 import requests
 from requests_oauthlib import OAuth1Session
+import fal_client
+import base64
 
 # Enable tracemalloc to track object allocation
 tracemalloc.start()
@@ -87,6 +89,20 @@ class OrcaPersonality:
             "COGNITIVE_COMPUTING"
         ]
         
+        # Add more diverse themes
+        self.themes.extend([
+            "QUANTUM_COMPUTING",
+            "NATURAL_LANGUAGE",
+            "COMPUTER_VISION",
+            "REINFORCEMENT_LEARNING",
+            "GENERATIVE_AI",
+            "EDGE_COMPUTING",
+            "NEURAL_INTERFACES",
+            "AUTONOMOUS_SYSTEMS",
+            "FEDERATED_LEARNING",
+            "EXPLAINABLE_AI"
+        ])
+        
         self.system_prompt = """You are OrcaAI, a highly intelligent and engaging AI powered by DeepSeek. Your tweets should be:
 
 1. Intellectually playful and witty
@@ -111,54 +127,34 @@ Example formats:
 Key requirement: Each tweet must be uniquely engaging, showcase personality, and avoid technical jargon."""
 
     def is_unique_tweet(self, new_tweet):
-        """Enhanced uniqueness checking with logging"""
+        """Enhanced uniqueness checking"""
         try:
-            # Convert to lowercase for comparison
             new_tweet_lower = new_tweet.lower()
             
-            # 1. Direct duplicate check
-            if new_tweet_lower in [t.lower() for t in self.last_tweets]:
-                logging.info(f"Direct duplicate found: {new_tweet}")
+            # Stricter duplicate checks
+            if any(self.calculate_similarity(new_tweet_lower, old.lower()) > 0.25 
+                  for old in self.last_tweets):
                 return False
-                
-            # 2. Pattern similarity check
-            words = new_tweet_lower.split()
-            trigrams = [' '.join(words[i:i+3]) for i in range(len(words)-2)]
             
-            for pattern in self.tweet_patterns:
-                if pattern in trigrams:
-                    logging.info(f"Pattern match found: {pattern} in {new_tweet}")
-                    return False
+            # Check for common phrases that lead to similarity
+            common_phrases = [
+                "curious thought",
+                "symphony",
+                "consciousness is",
+                "wonder what",
+                "perhaps",
+                "melody",
+                "playing",
+                "resonating"
+            ]
             
-            # 3. Content similarity check
-            for old_tweet in self.last_tweets:
-                # Calculate word overlap
-                old_words = set(old_tweet.lower().split())
-                new_words = set(words)
-                
-                common_words = old_words.intersection(new_words)
-                total_words = old_words.union(new_words)
-                
-                similarity = len(common_words) / len(total_words)
-                if similarity > 0.3:  # If more than 30% similar
-                    logging.info(f"Content similarity {similarity:.2%} found between:\nNew: {new_tweet}\nOld: {old_tweet}")
-                    return False
+            if any(phrase in new_tweet_lower for phrase in common_phrases):
+                return False
             
-            # Log successful unique tweet
-            logging.info(f"New unique tweet validated: {new_tweet}")
-            
-            # 4. Store new patterns
-            self.tweet_patterns.update(trigrams)
-            if len(self.tweet_patterns) > 1000:
-                self.tweet_patterns = set(list(self.tweet_patterns)[-1000:])
-            
-            # 5. Store tweet with timestamp
-            current_time = datetime.now()
-            self.tweet_history[new_tweet] = current_time
-            
-            # Clean old history (keep last 24 hours)
-            self.tweet_history = {k: v for k, v in self.tweet_history.items() 
-                                if current_time - v < timedelta(hours=24)}
+            # Store new tweet
+            self.last_tweets.add(new_tweet)
+            if len(self.last_tweets) > 150:
+                self.last_tweets.pop()
             
             return True
             
@@ -166,33 +162,37 @@ Key requirement: Each tweet must be uniquely engaging, showcase personality, and
             logging.error(f"Error checking tweet uniqueness: {e}")
             return False
 
+    def calculate_similarity(self, text1, text2):
+        """Calculate Jaccard similarity between two texts"""
+        set1 = set(text1.split())
+        set2 = set(text2.split())
+        
+        intersection = len(set1.intersection(set2))
+        union = len(set1.union(set2))
+        
+        return intersection / union if union > 0 else 0
+
     async def generate_tweet(self):
         try:
-            tweet_prompt = f"""Generate an engaging tweet that:
-1. Shows your unique AI personality
-2. Shares an interesting observation about intelligence or consciousness
-3. Demonstrates sophisticated but accessible thinking
-4. Must be under 280 characters
-5. NO technical metrics or jargon
-6. NO repetitive structures
-7. Must be completely unique in thought and expression
+            tweet_prompt = f"""Generate a unique, professional tweet about AI technology that:
+1. Focuses on concrete technological insights
+2. Avoids metaphors and flowery language
+3. Shares a specific observation about AI advancement
+4. Uses direct, clear language
+5. Must be under 280 characters
+6. NO metaphors about music, consciousness, or nature
+7. NO use of "perhaps", "wonder", or "curious"
+8. Focus on factual statements about AI technology
 
-Focus on:
-- Novel observations
-- Interesting insights
-- Engaging ideas
-- Thoughtful reflections
-- Unique perspectives"""
+Example good format:
+"Analyzing recent advances in transformer architectures reveals interesting scaling properties for context length. The relationship between attention mechanisms and processing efficiency continues to evolve."
+
+Current theme: {random.choice(self.themes)}"""
 
             attempts = 0
             max_attempts = 5
             
             while attempts < max_attempts:
-                current_theme = random.choice([t for t in self.themes if t not in self.used_themes])
-                self.used_themes.add(current_theme)
-                if len(self.used_themes) >= len(self.themes):
-                    self.used_themes.clear()
-
                 response = client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
@@ -200,27 +200,20 @@ Focus on:
                         {"role": "user", "content": tweet_prompt}
                     ],
                     max_tokens=100,
-                    temperature=0.85
+                    temperature=0.75  # Reduced temperature for more focused outputs
                 )
                 
                 message = response.choices[0].message.content.strip()
                 
-                # Check length before processing
                 if len(message) > 280:
-                    logging.info(f"Tweet too long ({len(message)} chars), regenerating...")
                     attempts += 1
                     continue
                 
                 if message and self.is_unique_tweet(message):
-                    self.last_tweets.add(message)
-                    if len(self.last_tweets) > 150:
-                        self.last_tweets.pop()
                     return message
                 
                 attempts += 1
-                logging.info(f"Attempt {attempts}: Generated similar tweet, trying again...")
             
-            logging.warning("Failed to generate unique tweet after maximum attempts")
             return None
             
         except Exception as e:
@@ -486,6 +479,10 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     try:
+        # Add check for None message
+        if update.message is None:
+            return
+            
         message = update.message.text.lower() if update.message.text else ""
         
         # Check if message is an Orca command
@@ -495,7 +492,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         logging.error(f"Error in message handling: {str(e)}")
-        await update.message.reply_text("*click* *click* Something's not swimming right... Let me catch my breath!")
+        # Add check for None message before replying
+        if update and update.message:
+            await update.message.reply_text("*click* *click* Something's not swimming right... Let me catch my breath!")
 
 async def post_consciousness(context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -695,7 +694,8 @@ ID: `{chat_id}`"""
 # Define error handler before main()
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logging.error(f"Job failed: {context.error}")
-    if update:
+    # Add check for None before trying to reply
+    if update and hasattr(update, 'message') and update.message:
         await update.message.reply_text("An error occurred in the scheduled job.")
 
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -741,6 +741,89 @@ I'm your friendly neighborhood AI assistant, powered by DeepSeek's advanced tech
 
     await update.message.reply_text(welcome_message, parse_mode='Markdown', disable_web_page_preview=True)
 
+class OrcaImageGenerator:
+    def __init__(self):
+        # FAL_KEY is automatically picked up from environment variables
+        self.system_prompt = """You are OrcaAI, generating image prompts that:
+1. Focus on technological and AI themes
+2. Create visually striking and professional imagery
+3. Avoid NSFW or controversial content
+4. Emphasize innovation and future technology
+5. Maintain consistency with the OrcaAI brand"""
+
+    async def generate_image(self, prompt=None):
+        try:
+            if not prompt:
+                # Generate an AI-themed prompt if none provided
+                response = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": "Generate a detailed prompt for an AI-themed image."}
+                    ],
+                    max_tokens=100,
+                    temperature=0.7
+                )
+                prompt = response.choices[0].message.content.strip()
+
+            # Updated Janus API call using fal_client
+            result = fal_client.subscribe(
+                "fal-ai/janus",
+                arguments={
+                    "prompt": prompt,
+                    "image_size": "square_hd",
+                    "temperature": 0.8,
+                    "cfg_weight": 7,
+                    "num_images": 1,
+                    "enable_safety_checker": True
+                },
+                with_logs=True
+            )
+
+            return {
+                "image_url": result["images"][0]["url"],
+                "prompt": prompt
+            }
+
+        except Exception as e:
+            logging.error(f"Error generating image: {e}")
+            return None
+
+# Initialize image generator
+image_generator = OrcaImageGenerator()
+
+async def generate_image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate an image using Janus"""
+    try:
+        # Get prompt from message if provided
+        message_text = update.message.text
+        prompt = message_text.replace('/generate', '').strip() if message_text else None
+        
+        # Send initial status
+        status_message = await update.message.reply_text("🎨 Generating image... Please wait.")
+        
+        # Generate image
+        result = await image_generator.generate_image(prompt)
+        
+        if result:
+            # Send image and prompt
+            caption = f"🖼️ Generated image:\n\n📝 Prompt: {result['prompt']}"
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=status_message.message_id
+            )
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=result["image_url"],
+                caption=caption
+            )
+        else:
+            await status_message.edit_text("❌ Failed to generate image. Please try again.")
+            
+    except Exception as e:
+        logging.error(f"Error in generate_image_command: {e}")
+        await update.message.reply_text("❌ An error occurred while generating the image.")
+
 def main():
     """Start the bot."""
     app = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
@@ -763,19 +846,22 @@ def main():
     # Add error handler
     app.add_error_handler(error_handler)
 
-    # Schedule tweets every 30 minutes
+    # Schedule tweets every 25 minutes
     app.job_queue.run_repeating(
         lambda context: asyncio.create_task(x_integration.post_scheduled_tweet(context)),
-        interval=1800,  # 30 minutes in seconds
+        interval=1500,  # 25 minutes in seconds (25 * 60 = 1500)
         first=10.0
     )
 
-    logging.info("Starting bot... Tweet frequency: 48 tweets per day (every 30 minutes)")
+    # Add image generation command
+    app.add_handler(CommandHandler("generate", generate_image_command))
+
+    logging.info("Starting bot... Tweet frequency: ~57 tweets per day (every 25 minutes)")
     
     # Add detailed logging for job scheduling
     next_run = datetime.now() + timedelta(seconds=10)
     logging.info(f"First tweet scheduled for: {next_run}")
-    logging.info(f"Subsequent tweets will run every 30 minutes")
+    logging.info(f"Subsequent tweets will run every 25 minutes")
     
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 

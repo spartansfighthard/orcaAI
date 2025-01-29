@@ -97,6 +97,23 @@ python telegram_bot.py
 - `/help` - Display available commands
 - `/clear` - Clear conversation history
 
+// ... existing content ...
+
+## 🎨 Image Generation
+OrcaAI now supports AI image generation using Janus 7! 
+
+### Commands
+- `/generate` - Generate an AI-themed image with auto prompt
+- `/generate your prompt here` - Generate an image with your custom prompt
+
+### Features
+- High-resolution output
+- Advanced prompt understanding
+- Built-in safety filters
+- Professional quality images
+
+### Example Usage
+
 ## 🔧 Development
 
 ### Project Structure
